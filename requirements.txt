@@ -1,7 +1,0 @@
-libml @ git+https://github.com/remla25-team14/lib-ml@0.1.6
-Flask==3.1.0
-joblib==1.4.2
-pandas==2.2.3
-python-dotenv==1.1.0
-Requests==2.32.3
-scikit-learn==1.5.2
