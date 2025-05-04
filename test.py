@@ -3,33 +3,40 @@ import json
 
 BASE_URL = "http://localhost:5000"
 
-def test_health():
-    url = f"{BASE_URL}/health"
+def test_version():
+    url = f"{BASE_URL}/version"
     try:
         resp = requests.get(url, timeout=5)
-        print(f"[HEALTH] Status code: {resp.status_code}")
-        print(f"[HEALTH] Response JSON: {resp.json()}")
+        print(f"[VERSION] Status code: {resp.status_code}")
+        print(f"[VERSION] Response JSON: {resp.json()}")
     except Exception as e:
-        print(f"[HEALTH] Request failed: {e}")
+        print(f"[VERSION] Request failed: {e}")
 
-def test_predict(sample_text):
-    url = f"{BASE_URL}/predict"
+def test_analyze(sample_review):
+    url = f"{BASE_URL}/analyze"
     headers = {"Content-Type": "application/json"}
-    payload = {"text": sample_text}
+    payload = {"review": sample_review}
     try:
         resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
-        print(f"[PREDICT] Status code: {resp.status_code}")
-        # If JSON parse fails, print raw text
+        print(f"[ANALYZE] Status code: {resp.status_code}")
         try:
-            print(f"[PREDICT] Response JSON: {resp.json()}")
+            print(f"[ANALYZE] Response JSON: {resp.json()}")
         except json.JSONDecodeError:
-            print(f"[PREDICT] Response Text: {resp.text}")
+            print(f"[ANALYZE] Response Text: {resp.text}")
     except Exception as e:
-        print(f"[PREDICT] Request failed: {e}")
+        print(f"[ANALYZE] Request failed: {e}")
 
 if __name__ == "__main__":
-    print("=== Testing /health ===")
-    test_health()
-    print("\n=== Testing /predict ===")
-    test_predict("I absolutely loved this product—highly recommend!")
-    test_predict("This was the worst experience I've ever had.")
+    print("=== Testing /version ===")
+    test_version()
+    print("\n=== Testing /analyze ===")
+    test_analyze("The food was decent but the service could be better.")
+    test_analyze("This was the worst experience I've ever had.")
+    print("\n=== Testing error case (missing field) ===")
+    # send empty payload to trigger 400
+    try:
+        resp = requests.post(f"{BASE_URL}/analyze", headers={"Content-Type": "application/json"}, data=json.dumps({}), timeout=5)
+        print(f"[ANALYZE-ERROR] Status code: {resp.status_code}")
+        print(f"[ANALYZE-ERROR] Response JSON: {resp.json()}")
+    except Exception as e:
+        print(f"[ANALYZE-ERROR] Request failed: {e}")

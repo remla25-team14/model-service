@@ -2,15 +2,17 @@ import os
 import time
 import logging
 import zipfile
-import joblib
-import requests
+import uuid
 
+import joblib
+import pandas as pd
+import requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-import pandas as pd
 
-# --- Load .env and strip any surrounding quotes ---
+# ─── Load config & version ─────────────────────────────────────
 load_dotenv()
+
 def _strip(v: str) -> str:
     if v and v.startswith('"') and v.endswith('"'):
         return v[1:-1]
@@ -24,167 +26,117 @@ MODEL_FILE_NAME_IN_ZIP = _strip(os.getenv("MODEL_FILE_NAME_IN_ZIP", "c2_Classifi
 LOCAL_MODEL_CACHE_PATH = _strip(os.getenv("LOCAL_MODEL_CACHE_PATH", "model_cache"))
 PORT                   = int(os.getenv("PORT", 5000))
 
-# --- Logging setup ---
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s - %(levelname)s - %(message)s")
-
 with open("VERSION") as f:
     SERVICE_VERSION = f.read().strip()
+
+# ─── Logging ────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s - %(levelname)s - %(message)s")
 logging.info(f"Starting model-service v{SERVICE_VERSION}")
 
-
-# --- Flask app & globals ---
+# ─── Flask App ──────────────────────────────────────────────────
 app = Flask(__name__)
 classifier = None
 vectorizer = None
 
-# --- Download & extract artifact ZIP safely ---
-def download_and_extract_artifact(
-    owner_repo: str,
-    artifact_id: str,
-    token: str,
-    extract_dir: str,
-    retries: int = 3,
-    delay: int = 5
-) -> bool:
-    """Downloads a GitHub Actions artifact ZIP and extracts its files."""
+# ─── Download & extract (unchanged) ────────────────────────────
+def download_and_extract_artifact(owner_repo, artifact_id, token, extract_dir, retries=3, delay=5):
     if not token:
-        logging.error("GITHUB_TOKEN not set. Cannot authenticate to GitHub API.")
+        logging.error("GITHUB_TOKEN not set")
         return False
-
     api_url = f"https://api.github.com/repos/{owner_repo}/actions/artifacts/{artifact_id}/zip"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
     os.makedirs(extract_dir, exist_ok=True)
-    temp_zip = os.path.join(extract_dir, "artifact.zip")
-
-    for attempt in range(1, retries + 1):
+    tmp = os.path.join(extract_dir, "artifact.zip")
+    for attempt in range(1, retries+1):
         try:
-            logging.info(f"Downloading artifact {artifact_id} (attempt {attempt})…")
-            resp = requests.get(api_url, headers=headers, stream=True, timeout=60)
-            resp.raise_for_status()
-
-            # Write ZIP to disk
-            with open(temp_zip, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8192):
+            r = requests.get(api_url, headers=headers, stream=True, timeout=60)
+            r.raise_for_status()
+            with open(tmp, "wb") as f:
+                for chunk in r.iter_content(8192):
                     f.write(chunk)
-            logging.info(f"Downloaded artifact to {temp_zip}")
-
-            # Extract all files
-            with zipfile.ZipFile(temp_zip, "r") as z:
+            with zipfile.ZipFile(tmp, "r") as z:
                 z.extractall(extract_dir)
-                logging.info(f"Extracted ZIP into {extract_dir}")
-
-            # Remove the ZIP after closing it
-            os.remove(temp_zip)
+            os.remove(tmp)
             return True
-
-        except (requests.RequestException, zipfile.BadZipFile) as e:
+        except Exception as e:
             logging.warning(f"Attempt {attempt} failed: {e}")
-            # Cleanup partial file
-            if os.path.exists(temp_zip):
-                try: os.remove(temp_zip)
-                except OSError: pass
-
-            if attempt < retries:
-                logging.info(f"Retrying in {delay}s…")
-                time.sleep(delay)
-            else:
-                logging.error("Exceeded max retries for artifact download.")
-                return False
-
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            time.sleep(delay)
+    logging.error("Could not download artifact")
     return False
 
-# --- Initialize model & vectorizer ---
+# ─── Model Initialization ───────────────────────────────────────
 def initialize_model():
     global classifier, vectorizer
-
     vec_path = os.path.join(LOCAL_MODEL_CACHE_PATH, VECT_FILE_NAME_IN_ZIP)
-    pkl_path = os.path.join(LOCAL_MODEL_CACHE_PATH, MODEL_FILE_NAME_IN_ZIP)
+    mdl_path = os.path.join(LOCAL_MODEL_CACHE_PATH, MODEL_FILE_NAME_IN_ZIP)
 
-    # Download & extract if missing
-    if not (os.path.exists(vec_path) and os.path.exists(pkl_path)):
-        success = download_and_extract_artifact(
-            OWNER_REPO,
-            ARTIFACT_ID,
-            GITHUB_TOKEN,
-            LOCAL_MODEL_CACHE_PATH
-        )
-        if not success:
-            logging.error("Artifact fetch/extract failed.")
+    if not (os.path.exists(vec_path) and os.path.exists(mdl_path)):
+        if not download_and_extract_artifact(OWNER_REPO, ARTIFACT_ID, GITHUB_TOKEN, LOCAL_MODEL_CACHE_PATH):
+            logging.error("Artifact fetch/extract failed")
             return
 
-    # Load CountVectorizer
     try:
         vectorizer = joblib.load(vec_path)
-        logging.info(f"CountVectorizer loaded from {vec_path}")
+        logging.info(f"Loaded vectorizer from {vec_path}")
     except Exception as e:
-        logging.error(f"Failed to load CountVectorizer: {e}")
-        vectorizer = None
+        logging.error(f"Vectorizer load error: {e}")
 
-    # Load classifier
     try:
-        classifier = joblib.load(pkl_path)
-        logging.info(f"Classifier loaded from {pkl_path}")
+        classifier = joblib.load(mdl_path)
+        logging.info(f"Loaded classifier from {mdl_path}")
     except Exception as e:
-        logging.error(f"Failed to load classifier: {e}")
-        classifier = None
+        logging.error(f"Classifier load error: {e}")
 
-# --- Preprocessing import ---
 try:
     from libml.data_preprocessing import preprocess_reviews
 except ImportError:
-    logging.error("Could not import preprocess_reviews from libml; defining dummy passthrough.")
-    def preprocess_reviews(df: pd.DataFrame):
+    logging.error("libml import failed; using passthrough")
+    def preprocess_reviews(df):
         return df["Review"].tolist()
 
-# --- Health check endpoint ---
-@app.route("/health", methods=["GET"])
-def health_check():
-    ready = classifier is not None and vectorizer is not None
-    status_code = 200 if ready else 503
-    return jsonify({
-        "status": "ok" if ready else "error",
-        "model_loaded": ready,
-        "message": None if ready else "Model or vectorizer not loaded"
-    }), status_code
+initialize_model()
 
-# --- Prediction endpoint ---
-@app.route("/predict", methods=["POST"])
-def predict():
+# ─── Version Endpoint ──────────────────────────────────────────
+@app.route("/version", methods=["GET"])
+def version():
+    return jsonify({"model_version": SERVICE_VERSION})
+
+# ─── Analyze Endpoint ──────────────────────────────────────────
+@app.route("/analyze", methods=["POST"])
+def analyze():
     if classifier is None or vectorizer is None:
         return jsonify({"error": "Model not ready"}), 503
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
 
     data = request.get_json()
-    text = data.get("text")
-    if not text:
-        return jsonify({"error": "Missing 'text' field"}), 400
+    review = data.get("review")
+    if not review:
+        return jsonify({"error": "Missing 'review' field"}), 400
 
+    # Preprocess and vectorize
+    df = pd.DataFrame({"Review": [review]})
+    processed = preprocess_reviews(df)[0]
+    X = vectorizer.transform([processed]).toarray()
+
+    # Predict
+    sentiment = classifier.predict(X)[0]
+    # Confidence (if classifier supports predict_proba)
     try:
-        # Wrap input in DataFrame for your preprocess_reviews
-        df = pd.DataFrame({"Review": [text]})
-        processed_list = preprocess_reviews(df)
-        processed = processed_list[0]
+        confs = classifier.predict_proba(X)[0]
+        confidence = float(max(confs))
+    except Exception:
+        confidence = None
 
-        # Vectorize → dense array for GaussianNB
-        X_sparse = vectorizer.transform([processed])
-        X = X_sparse.toarray()
+    return jsonify({
+        "review_id": str(uuid.uuid4()),
+        "review": review,
+        "sentiment": bool(int(sentiment)),
+        "confidence": confidence
+    })
 
-        # Predict
-        label = classifier.predict(X)[0]
-        return jsonify({"sentiment": str(label)})
-
-    except Exception as e:
-        logging.error("Prediction error:", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-# --- App startup ---
+# ─── Run ────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    logging.info("Initializing model and vectorizer…")
-    initialize_model()
-    logging.info(f"Starting Flask server on port {PORT}")
+    logging.info(f"Serving on port {PORT}")
     app.run(host="0.0.0.0", port=PORT)
