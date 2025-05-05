@@ -136,6 +136,21 @@ def analyze():
         "confidence": confidence
     })
 
+# ─── Feedback receiver on model-service ──────────────────────────
+@app.route("/feedback", methods=["POST"])
+def receive_feedback():
+    data = request.get_json()
+    
+    # Basic validation
+    if not data or "review_id" not in data or "correct_sentiment" not in data:
+        return jsonify({"error": "Missing 'review_id' or 'correct_sentiment'"}), 400
+
+    # Log it for now; you can hook this into a DB or file later
+    logging.info(f"Feedback received: {data}")
+
+    # Ack back to sender
+    return jsonify({"status": "success", "message": "Feedback logged"}), 200
+
 # ─── Run ────────────────────────────────────────────────────────
 if __name__ == "__main__":
     logging.info(f"Serving on port {PORT}")
