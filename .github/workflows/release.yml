@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
 
       - name: Log in to GHCR
         uses: docker/login-action@v2
@@ -17,11 +20,25 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract VERSION
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update VERSION file after release
+        run: |
+          echo "${{ steps.get_version.outputs.version }}" > VERSION
+          NEXT_VERSION=$(echo ${{ steps.get_version.outputs.version }} | awk -F. '{$NF = $NF + 1;} 1' OFS=.)
+          echo "$NEXT_VERSION-pre" > VERSION
 
       - name: Build & push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/model-service:${{ github.ref_name }}

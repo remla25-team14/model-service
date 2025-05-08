@@ -1,33 +1,37 @@
-# STAGE 1: builder
-FROM python:3.12-slim AS builder
+# Builder stage
+FROM python:3.11-slim as builder
+
 WORKDIR /app
 
-# Install build deps (gcc for wheels, git for VCS deps)
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      gcc \
-      git \
- && rm -rf /var/lib/apt/lists/*
-
-# Copy & install Python deps (including libml from GitHub)
 COPY requirements.txt .
-RUN pip install --upgrade pip \
- && pip install --prefix=/install --no-cache-dir -r requirements.txt
 
-# Copy your code (app.py, libml/, etc.)
-COPY . .
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# STAGE 2: runtime
-FROM python:3.12-slim
+# Final stage
+FROM python:3.11-slim
+
 WORKDIR /app
 
-# Bring in installed packages
-COPY --from=builder /install /usr/local
+# Copy installed packages from builder
+COPY --from=builder /root/.local /root/.local
 
-# Copy application code
+# Make sure scripts are in PATH
+ENV PATH=/root/.local/bin:$PATH
+
+# Copy necessary files
 COPY . .
 
-ENV PORT=5000
-EXPOSE 5000
+# Create model cache directory
+RUN mkdir -p model_cache && chmod 777 model_cache
 
+# Environment variables with defaults
+ENV GITHUB_TOKEN=""
+ENV OWNER_REPO="remla25-team14/model-training"
+ENV ARTIFACT_ID="3053668556" 
+ENV PORT=5000
+
+# Expose the port
+EXPOSE ${PORT}
+
+# Entry point
 CMD ["python", "app.py"]
