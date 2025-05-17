@@ -27,7 +27,7 @@ RUN mkdir -p model_cache && chmod 777 model_cache
 # Environment variables with defaults
 ENV GITHUB_TOKEN=""
 ENV OWNER_REPO="remla25-team14/model-training"
-ENV ARTIFACT_ID="3053668556" 
+ENV ARTIFACT_ID="3143858901" 
 ENV PORT=5000
 
 # Expose the port

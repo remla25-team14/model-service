@@ -24,7 +24,7 @@ def _strip(v: str) -> str:
 
 GITHUB_TOKEN           = _strip(os.getenv("GITHUB_TOKEN"))
 OWNER_REPO             = _strip(os.getenv("OWNER_REPO", "remla25-team14/model-training"))
-ARTIFACT_ID            = _strip(os.getenv("ARTIFACT_ID", "3053668556"))
+ARTIFACT_ID            = _strip(os.getenv("ARTIFACT_ID", "3143858901"))
 VECT_FILE_NAME_IN_ZIP  = _strip(os.getenv("VECT_FILE_NAME_IN_ZIP", "c1_BoW_v1.pkl"))
 MODEL_FILE_NAME_IN_ZIP = _strip(os.getenv("MODEL_FILE_NAME_IN_ZIP", "c2_Classifier_v1.pkl"))
 LOCAL_MODEL_CACHE_PATH = _strip(os.getenv("LOCAL_MODEL_CACHE_PATH", "model_cache"))
