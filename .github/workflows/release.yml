@@ -3,46 +3,43 @@ name: Release Model-Service
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*' # Trigger on version tags like v0.1.0, v1.2.3
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions: # Permissions needed for the job
+      contents: read    # To checkout the repository
+      packages: write   # To push Docker images to GHCR
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Set up QEMU (for multi-platform builds)
+        uses: docker/setup-qemu-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v2
+      - name: Set up Docker Buildx (for multi-platform builds)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Extract VERSION
-        id: get_version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          username: ${{ github.actor }} # Your GitHub username or organization name
+          password: ${{ secrets.GITHUB_TOKEN }} # Built-in token for GHCR authentication
 
-      - name: Update VERSION file after release
-        run: |
-          echo "${{ steps.get_version.outputs.version }}" > VERSION
-          NEXT_VERSION=$(echo ${{ steps.get_version.outputs.version }} | awk -F. '{$NF = $NF + 1;} 1' OFS=.)
-          echo "$NEXT_VERSION-pre" > VERSION
-
-      - name: Build & push Docker image
-        uses: docker/build-push-action@v4
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
+          context: . # Build context is the root of the repository
+          # platforms: linux/amd64,linux/arm64 # Keep if you need multi-arch
+          push: true # Push the image after building
+          tags: | # Tags for the image
             ghcr.io/${{ github.repository_owner }}/model-service:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/model-service:latest
+          # No build-args needed for GITHUB_TOKEN_ARG etc. for this basic build
+          # If your Dockerfile still has ARGs defined, they will use their default values
+          # or be empty, which is fine since no download is attempted.
+          cache-from: type=gha # Optional: Enable build cache
+          cache-to: type=gha,mode=max # Optional: Enable build cache
