@@ -1,6 +1,6 @@
 libml @ git+https://github.com/remla25-team14/lib-ml@0.1.6
 Flask==3.1.0
-flask-openapi3==3.0.0
+flask-openapi3
 apispec==6.4.0
 pydantic==2.6.1
 joblib==1.4.2
