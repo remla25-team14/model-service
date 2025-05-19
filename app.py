@@ -38,15 +38,19 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(levelname)s - %(message)s")
 logging.info(f"Starting model-service v{SERVICE_VERSION}")
 
+      
 # ─── Flask App & OpenAPI Setup ────────────────────────────────────
 info = Info(title="Sentiment Analysis API", version=SERVICE_VERSION)
-app = OpenAPI(__name__, 
+app = OpenAPI(__name__,
               info=info,
-              swagger_ui_path="/swagger")  # Enable Swagger UI at /swagger
+              doc_prefix="/"  
+             )
 
 sentiment_tag = Tag(name="sentiment", description="Sentiment analysis operations")
 version_tag = Tag(name="version", description="API version information")
-docs_tag = Tag(name="docs", description="API documentation")
+docs_tag = Tag(name="docs", description="API documentation") 
+
+    
 
 # ─── API Models (Pydantic) ────────────────────────────────────
 class VersionResponse(BaseModel):
