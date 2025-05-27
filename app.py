@@ -14,7 +14,6 @@ from flask_openapi3 import OpenAPI, Info, Tag
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-# ─── Load config & version ─────────────────────────────────────
 load_dotenv()
 
 def _strip(v: str) -> str:
@@ -33,13 +32,10 @@ PORT                   = int(os.getenv("PORT", 5000))
 with open("VERSION") as f:
     SERVICE_VERSION = f.read().strip()
 
-# ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(levelname)s - %(message)s")
 logging.info(f"Starting model-service v{SERVICE_VERSION}")
 
-      
-# ─── Flask App & OpenAPI Setup ────────────────────────────────────
 info = Info(title="Sentiment Analysis API", version=SERVICE_VERSION)
 app = OpenAPI(__name__,
               info=info,
@@ -50,9 +46,6 @@ sentiment_tag = Tag(name="sentiment", description="Sentiment analysis operations
 version_tag = Tag(name="version", description="API version information")
 docs_tag = Tag(name="docs", description="API documentation") 
 
-    
-
-# ─── API Models (Pydantic) ────────────────────────────────────
 class VersionResponse(BaseModel):
     model_version: str = Field(..., description="Current model service version")
 
@@ -76,11 +69,9 @@ class FeedbackResponse(BaseModel):
     status: str = Field(..., description="Status of the feedback submission") 
     message: str = Field(..., description="Additional information about the feedback submission")
 
-# ─── Global Model variables ─────────────────────────────────────
 classifier = None
 vectorizer = None
 
-# ─── Download & extract (unchanged) ────────────────────────────
 def download_and_extract_artifact(owner_repo, artifact_id, token, extract_dir, retries=3, delay=5):
     if not token:
         logging.error("GITHUB_TOKEN not set")
@@ -122,7 +113,6 @@ def download_and_extract_artifact(owner_repo, artifact_id, token, extract_dir, r
     logging.error("Could not download artifact")
     return False
 
-# ─── Model Initialization ───────────────────────────────────────
 def initialize_model():
     global classifier, vectorizer
     vec_path = os.path.join(LOCAL_MODEL_CACHE_PATH, VECT_FILE_NAME_IN_ZIP)
@@ -154,7 +144,6 @@ except ImportError:
 
 initialize_model()
 
-# ─── Version Endpoint ──────────────────────────────────────────
 @app.get("/version", tags=[version_tag], responses={"200": VersionResponse})
 def version():
     """
@@ -162,7 +151,6 @@ def version():
     """
     return jsonify({"model_version": SERVICE_VERSION})
 
-# ─── Analyze Endpoint ──────────────────────────────────────────
 @app.post("/analyze", tags=[sentiment_tag], 
           responses={"200": AnalysisResponse, "400": ErrorResponse, "503": ErrorResponse})
 def analyze(body: ReviewRequest):
@@ -200,7 +188,6 @@ def analyze(body: ReviewRequest):
         "confidence": confidence
     })
 
-# ─── Feedback receiver on model-service ──────────────────────────
 @app.post("/feedback", tags=[sentiment_tag],
           responses={"200": FeedbackResponse, "400": ErrorResponse})
 def receive_feedback(body: FeedbackRequest):
@@ -241,7 +228,6 @@ def receive_feedback(body: FeedbackRequest):
     # Ack back to sender
     return jsonify({"status": "success", "message": "Feedback saved for future model improvement"}), 200
 
-# ─── OpenAPI Spec Endpoint ─────────────────────────────────────
 @app.get("/openapi.json", tags=[docs_tag])
 def get_openapi_spec():
     """
@@ -252,7 +238,6 @@ def get_openapi_spec():
     """
     return jsonify(app.get_openapi())
 
-# Add a redirect from the root to the Swagger UI
 @app.get("/", tags=[docs_tag])
 def redirect_to_docs():
     """
@@ -261,7 +246,6 @@ def redirect_to_docs():
     from flask import redirect
     return redirect("/swagger")
 
-# ─── Run ────────────────────────────────────────────────────────
 if __name__ == "__main__":
     logging.info(f"Serving on port {PORT}")
     app.run(host="0.0.0.0", port=PORT)

@@ -1,4 +1,5 @@
 libml @ git+https://github.com/remla25-team14/lib-ml@0.1.6
+flask-openapi3[swagger,redoc,rapidoc,scalar,elements]
 Flask==3.1.0
 flask-openapi3
 apispec==6.4.0
@@ -6,5 +7,5 @@ pydantic==2.6.1
 joblib==1.4.2
 pandas==2.2.3
 python-dotenv==1.1.0
-Requests==2.32.3
+requests==2.32.3
 scikit-learn==1.5.2
