@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from flask_openapi3.utils import get_operation
 from apispec import APISpec
-from libversion import VersionUtil
 
 # ─── Load config & version ─────────────────────────────────────
 load_dotenv()
@@ -31,7 +30,12 @@ MODEL_FILE_NAME_IN_ZIP = _strip(os.getenv("MODEL_FILE_NAME_IN_ZIP", "c2_Classifi
 LOCAL_MODEL_CACHE_PATH = _strip(os.getenv("LOCAL_MODEL_CACHE_PATH", "model_cache"))
 PORT                   = int(os.getenv("PORT", 5000))
 
-SERVICE_VERSION = VersionUtil.get_version()
+# Get version from lib-version
+try:
+    from libversion import VersionUtil
+    SERVICE_VERSION = VersionUtil.get_version()
+except ImportError:
+    SERVICE_VERSION = "unknown"
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO,
