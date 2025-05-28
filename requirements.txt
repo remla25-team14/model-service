@@ -8,3 +8,4 @@ pandas==2.2.3
 python-dotenv==1.1.0
 Requests==2.32.3
 scikit-learn==1.5.2
+libversion @ git+https://github.com/remla25-team14/lib-version@v0.1.0
