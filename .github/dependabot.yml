@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    allow:
+      # Allow updates for lib-version and lib-ml
+      - dependency-name: "libversion"
+      - dependency-name: "libml"
+    # Specify custom registries for our private packages
+    registries:
+      - github-remla25-team14
+    # Group all updates into a single PR
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+
+registries:
+  github-remla25-team14:
+    type: git
+    url: https://github.com/remla25-team14
+    username: x-access-token
+    password: ${{secrets.GITHUB_TOKEN}} 
