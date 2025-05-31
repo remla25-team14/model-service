@@ -13,25 +13,29 @@ from flask import Flask, request, jsonify
 from flask_openapi3 import OpenAPI, Info, Tag
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+from flask_openapi3.utils import get_operation
+from apispec import APISpec
 
 # ─── Load config & version ─────────────────────────────────────
 load_dotenv()
 
 def _strip(v: str) -> str:
-    if v and v.startswith('"') and v.endswith('"'):
-        return v[1:-1]
-    return v or ""
+    return v.strip() if v else ""
 
 GITHUB_TOKEN           = _strip(os.getenv("GITHUB_TOKEN"))
 OWNER_REPO             = _strip(os.getenv("OWNER_REPO", "remla25-team14/model-training"))
-ARTIFACT_ID            = _strip(os.getenv("ARTIFACT_ID", "3143858901"))
-VECT_FILE_NAME_IN_ZIP  = _strip(os.getenv("VECT_FILE_NAME_IN_ZIP", "c1_BoW_v1.pkl"))
+ARTIFACT_ID            = _strip(os.getenv("ARTIFACT_ID", "1"))
+VECT_FILE_NAME_IN_ZIP  = _strip(os.getenv("VECT_FILE_NAME_IN_ZIP", "c1_BoW_Sentiment_Model.pkl"))
 MODEL_FILE_NAME_IN_ZIP = _strip(os.getenv("MODEL_FILE_NAME_IN_ZIP", "c2_Classifier_v1.pkl"))
 LOCAL_MODEL_CACHE_PATH = _strip(os.getenv("LOCAL_MODEL_CACHE_PATH", "model_cache"))
 PORT                   = int(os.getenv("PORT", 5000))
 
-with open("VERSION") as f:
-    SERVICE_VERSION = f.read().strip()
+# Get version from lib-version
+try:
+    from libversion import VersionUtil
+    SERVICE_VERSION = VersionUtil.get_version()
+except ImportError:
+    SERVICE_VERSION = "unknown"
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO,
