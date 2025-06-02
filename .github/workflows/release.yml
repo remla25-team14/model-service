@@ -33,7 +33,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: . # Build context is the root of the repository
-          # platforms: linux/amd64,linux/arm64 # Keep if you need multi-arch
+          platforms: linux/amd64,linux/arm64
           push: true # Push the image after building
           tags: | # Tags for the image
             ghcr.io/${{ github.repository_owner }}/model-service:${{ github.ref_name }}
