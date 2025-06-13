@@ -74,7 +74,9 @@ jobs:
       - name: Determine next prerelease version
         id: next_prerelease
         run: |
-          version=${{ github.ref_name#v }}
+          # strip 'refs/tags/v' prefix from GITHUB_REF
+          version=${GITHUB_REF#refs/tags/v}
+          # bump patch and append prerelease
           next=$(echo "$version" | awk -F. '{printf "%d.%d.%d-rc.1", $1, $2, $3+1}')
           echo "next_release=v$next" >> $GITHUB_OUTPUT
 
