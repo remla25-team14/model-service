@@ -36,8 +36,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build (PR only)
-        # This step runs only for pull requests. It builds the image but doesn't push it,
-        # acting as a validation step. 'load: true' makes the image available to subsequent steps if needed.
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v5
         with:
