@@ -12,9 +12,9 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
-      pull-requests: write
+      pull-requests: read
 
     steps:
       - name: Checkout repository
@@ -56,6 +56,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   create-release-and-bump:
+    # This job only runs when a tag is pushed. 
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -67,6 +68,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: 'main'
           fetch-depth: 0
 
       - name: Create GitHub Release (stable)
@@ -83,16 +85,34 @@ jobs:
         id: next_prerelease
         run: |
           version=${GITHUB_REF#refs/tags/v}
-          next=$(echo "$version" | awk -F. '{printf "%d.%d.%d-rc.1", $1, $2, $3+1}')
-          echo "next_release=v$next" >> $GITHUB_OUTPUT
+          base_version=$(echo "$version" | awk -F. '{printf "%d.%d.%d", $1, $2, $3+1}')
+          
+          latest_prerelease_tag=$(git tag --list "v${base_version}-rc.*" | sort -V | tail -n 1)
+          
+          rc_number=1
+          if [[ -n "$latest_prerelease_tag" ]]; then
+            latest_rc_number=$(echo "$latest_prerelease_tag" | grep -oP 'rc\.\K\d+')
+            rc_number=$((latest_rc_number + 1))
+          fi
+          
+          # Construct the new prerelease version string (e.g., v0.1.5-rc.3)
+          next="v${base_version}-rc.${rc_number}"
+          echo "next_release=$next" >> $GITHUB_OUTPUT
 
       - name: Bump version in metadata
         run: |
+          # Write the new prerelease version to a VERSION file
           echo "${{ steps.next_prerelease.outputs.next_release }}" > VERSION
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore: bump to prerelease ${{ steps.next_prerelease.outputs.next_release }}"
+          
+          git add VERSION
+          
+          git commit -m "chore: bump to prerelease ${{ steps.next_prerelease.outputs.next_release }}"
+          
           git tag ${{ steps.next_prerelease.outputs.next_release }}
+          
           git push origin HEAD:main --follow-tags
 
       - name: Create prerelease GitHub Release
