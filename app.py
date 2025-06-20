@@ -23,13 +23,47 @@ load_dotenv()
 def _strip(v: str) -> str:
     return v.strip() if v else ""
 
+# Read token from Docker secret file if available
+token_file = os.getenv("GITHUB_TOKEN_FILE")
+if token_file and os.path.exists(token_file):
+    with open(token_file, "r") as f:
+        GITHUB_TOKEN = f.read().strip()
+else:
+    GITHUB_TOKEN = _strip(os.getenv("GITHUB_TOKEN"))
+
 # New: Use versioned release for model loading
 TRAINED_MODEL_VERSION = _strip(os.getenv("TRAINED_MODEL_VERSION", "v0.1.0"))
+MODEL_SERVICE_IMAGE_TAG = _strip(os.getenv("MODEL_SERVICE_IMAGE_TAG", "unknown"))
 MODEL_CACHE_DIR = _strip(os.getenv("MODEL_CACHE_DIR", "model_cache"))
 REPO = "remla25-team14/model-training"
 VECT_FILE_NAME = _strip(os.getenv("VECT_FILE_NAME", "c1_BoW_Sentiment_Model.pkl"))
 MODEL_FILE_NAME = _strip(os.getenv("MODEL_FILE_NAME", "c2_Classifier_v1.pkl"))
 PORT = int(os.getenv("PORT", 5000))
+
+# If TRAINED_MODEL_VERSION is 'latest', resolve to the latest release tag from GitHub
+if TRAINED_MODEL_VERSION == "latest":
+    logging.info("Resolving the 'latest' model release tag from GitHub...")
+    try:
+        api_url = f"https://api.github.com/repos/{REPO}/releases/latest"
+        headers = {}
+        if GITHUB_TOKEN:
+            headers["Authorization"] = f"token {GITHUB_TOKEN}"
+        
+        resp = requests.get(api_url, headers=headers)
+        resp.raise_for_status()  # Raise an exception for bad status codes
+        
+        TRAINED_MODEL_VERSION = resp.json()["tag_name"]
+        logging.info(f"Successfully resolved 'latest' to release tag: {TRAINED_MODEL_VERSION}")
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to fetch latest model release from GitHub: {e}")
+        # Fallback to a known stable version if 'latest' fails
+        TRAINED_MODEL_VERSION = "v0.1.5" 
+        logging.warning(f"Falling back to known stable model version: {TRAINED_MODEL_VERSION}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while resolving the latest release: {e}")
+        TRAINED_MODEL_VERSION = "v0.1.5"
+        logging.warning(f"Falling back to known stable model version: {TRAINED_MODEL_VERSION}")
 
 # Get version from lib-version
 try:
@@ -87,7 +121,14 @@ vectorizer = None
 def download_from_github_release(version, asset_name, dest_path):
     url = f"https://github.com/{REPO}/releases/download/{version}/{asset_name}"
     logging.info(f"Downloading {asset_name} from {url}")
-    r = requests.get(url)
+    headers = {}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+    else:
+        # This will now only happen if the secret is not mounted and the env var is not set
+        logging.error("GITHUB_TOKEN not found.")
+
+    r = requests.get(url, headers=headers)
     if r.status_code == 200:
         with open(dest_path, "wb") as f:
             f.write(r.content)
@@ -139,7 +180,7 @@ def version():
     Get the current model service and model artifact version.
     """
     return jsonify({
-        "service_version": SERVICE_VERSION,
+        "service_version": MODEL_SERVICE_IMAGE_TAG,
         "model_version": TRAINED_MODEL_VERSION
     })
 
