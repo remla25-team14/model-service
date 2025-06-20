@@ -9,6 +9,7 @@ from typing import Dict, Optional, List, Any
 import joblib
 import pandas as pd
 import requests
+import pickle
 from flask import Flask, request, jsonify
 from flask_openapi3 import OpenAPI, Info, Tag
 from pydantic import BaseModel, Field
@@ -22,13 +23,13 @@ load_dotenv()
 def _strip(v: str) -> str:
     return v.strip() if v else ""
 
-GITHUB_TOKEN           = _strip(os.getenv("GITHUB_TOKEN"))
-OWNER_REPO             = _strip(os.getenv("OWNER_REPO", "remla25-team14/model-training"))
-ARTIFACT_ID            = _strip(os.getenv("ARTIFACT_ID", "1"))
-VECT_FILE_NAME_IN_ZIP  = _strip(os.getenv("VECT_FILE_NAME_IN_ZIP", "c1_BoW_Sentiment_Model.pkl"))
-MODEL_FILE_NAME_IN_ZIP = _strip(os.getenv("MODEL_FILE_NAME_IN_ZIP", "c2_Classifier_v1.pkl"))
-LOCAL_MODEL_CACHE_PATH = _strip(os.getenv("LOCAL_MODEL_CACHE_PATH", "model_cache"))
-PORT                   = int(os.getenv("PORT", 5000))
+# New: Use versioned release for model loading
+TRAINED_MODEL_VERSION = _strip(os.getenv("TRAINED_MODEL_VERSION", "v0.1.0"))
+MODEL_CACHE_DIR = _strip(os.getenv("MODEL_CACHE_DIR", "model_cache"))
+REPO = "remla25-team14/model-training"
+VECT_FILE_NAME = _strip(os.getenv("VECT_FILE_NAME", "c1_BoW_Sentiment_Model.pkl"))
+MODEL_FILE_NAME = _strip(os.getenv("MODEL_FILE_NAME", "c2_Classifier_v1.pkl"))
+PORT = int(os.getenv("PORT", 5000))
 
 # Get version from lib-version
 try:
@@ -42,7 +43,6 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(levelname)s - %(message)s")
 logging.info(f"Starting model-service v{SERVICE_VERSION}")
 
-      
 # ─── Flask App & OpenAPI Setup ────────────────────────────────────
 info = Info(title="Sentiment Analysis API", version=SERVICE_VERSION)
 app = OpenAPI(__name__,
@@ -54,11 +54,10 @@ sentiment_tag = Tag(name="sentiment", description="Sentiment analysis operations
 version_tag = Tag(name="version", description="API version information")
 docs_tag = Tag(name="docs", description="API documentation") 
 
-    
-
 # ─── API Models (Pydantic) ────────────────────────────────────
 class VersionResponse(BaseModel):
-    model_version: str = Field(..., description="Current model service version")
+    service_version: str = Field(..., description="Current model service version")
+    model_version: str = Field(..., description="Current loaded model version")
 
 class ReviewRequest(BaseModel):
     review: str = Field(..., min_length=1, description="Restaurant review text to analyze")
@@ -84,70 +83,45 @@ class FeedbackResponse(BaseModel):
 classifier = None
 vectorizer = None
 
-# ─── Download & extract (unchanged) ────────────────────────────
-def download_and_extract_artifact(owner_repo, artifact_id, token, extract_dir, retries=3, delay=5):
-    if not token:
-        logging.error("GITHUB_TOKEN not set")
-        return False
-    api_url = f"https://api.github.com/repos/{owner_repo}/actions/artifacts/{artifact_id}/zip"
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-    os.makedirs(extract_dir, exist_ok=True)
-    tmp = os.path.join(extract_dir, "artifact.zip")
-    
-    # Check cache validity - if files exist and were modified less than 24 hours ago
-    vec_path = os.path.join(extract_dir, VECT_FILE_NAME_IN_ZIP)
-    mdl_path = os.path.join(extract_dir, MODEL_FILE_NAME_IN_ZIP)
-    
-    if os.path.exists(vec_path) and os.path.exists(mdl_path):
-        vec_age = time.time() - os.path.getmtime(vec_path)
-        mdl_age = time.time() - os.path.getmtime(mdl_path)
-        one_day = 86400  # 24 hours in seconds
-        
-        if vec_age < one_day and mdl_age < one_day:
-            logging.info("Using cached model files (less than 24 hours old)")
-            return True
-    
-    for attempt in range(1, retries+1):
-        try:
-            r = requests.get(api_url, headers=headers, stream=True, timeout=60)
-            r.raise_for_status()
-            with open(tmp, "wb") as f:
-                for chunk in r.iter_content(8192):
-                    f.write(chunk)
-            with zipfile.ZipFile(tmp, "r") as z:
-                z.extractall(extract_dir)
-            os.remove(tmp)
-            return True
-        except Exception as e:
-            logging.warning(f"Attempt {attempt} failed: {e}")
-            if os.path.exists(tmp):
-                os.remove(tmp)
-            time.sleep(delay)
-    logging.error("Could not download artifact")
-    return False
+# ─── Model Download and Loading from GitHub Release ────────────
+def download_from_github_release(version, asset_name, dest_path):
+    url = f"https://github.com/{REPO}/releases/download/{version}/{asset_name}"
+    logging.info(f"Downloading {asset_name} from {url}")
+    r = requests.get(url)
+    if r.status_code == 200:
+        with open(dest_path, "wb") as f:
+            f.write(r.content)
+        logging.info(f"Downloaded {asset_name} to {dest_path}")
+    else:
+        raise RuntimeError(f"Failed to download {asset_name} from {url} (status {r.status_code})")
 
-# ─── Model Initialization ───────────────────────────────────────
 def initialize_model():
     global classifier, vectorizer
-    vec_path = os.path.join(LOCAL_MODEL_CACHE_PATH, VECT_FILE_NAME_IN_ZIP)
-    mdl_path = os.path.join(LOCAL_MODEL_CACHE_PATH, MODEL_FILE_NAME_IN_ZIP)
+    versioned_cache_dir = os.path.join(MODEL_CACHE_DIR, TRAINED_MODEL_VERSION)
+    os.makedirs(versioned_cache_dir, exist_ok=True)
+    model_path = os.path.join(versioned_cache_dir, MODEL_FILE_NAME)
+    vec_path = os.path.join(versioned_cache_dir, VECT_FILE_NAME)
 
-    if not (os.path.exists(vec_path) and os.path.exists(mdl_path)):
-        if not download_and_extract_artifact(OWNER_REPO, ARTIFACT_ID, GITHUB_TOKEN, LOCAL_MODEL_CACHE_PATH):
-            logging.error("Artifact fetch/extract failed")
-            return
+    # Download if missing
+    if not os.path.exists(model_path):
+        download_from_github_release(TRAINED_MODEL_VERSION, MODEL_FILE_NAME, model_path)
+    if not os.path.exists(vec_path):
+        download_from_github_release(TRAINED_MODEL_VERSION, VECT_FILE_NAME, vec_path)
 
+    # Load model and vectorizer
     try:
-        vectorizer = joblib.load(vec_path)
+        classifier = joblib.load(model_path)
+        logging.info(f"Loaded classifier from {model_path}")
+    except Exception as e:
+        logging.error(f"Classifier load error: {e}")
+        raise
+    try:
+        with open(vec_path, "rb") as f:
+            vectorizer = pickle.load(f)
         logging.info(f"Loaded vectorizer from {vec_path}")
     except Exception as e:
         logging.error(f"Vectorizer load error: {e}")
-
-    try:
-        classifier = joblib.load(mdl_path)
-        logging.info(f"Loaded classifier from {mdl_path}")
-    except Exception as e:
-        logging.error(f"Classifier load error: {e}")
+        raise
 
 try:
     from libml.data_preprocessing import preprocess_reviews
@@ -162,9 +136,12 @@ initialize_model()
 @app.get("/version", tags=[version_tag], responses={"200": VersionResponse})
 def version():
     """
-    Get the current model service version.
+    Get the current model service and model artifact version.
     """
-    return jsonify({"model_version": SERVICE_VERSION})
+    return jsonify({
+        "service_version": SERVICE_VERSION,
+        "model_version": TRAINED_MODEL_VERSION
+    })
 
 # ─── Analyze Endpoint ──────────────────────────────────────────
 @app.post("/analyze", tags=[sentiment_tag], 
@@ -219,7 +196,7 @@ def receive_feedback(body: FeedbackRequest):
         return jsonify({"error": "Missing 'review_id'"}), 400
 
     # Store the feedback for future model improvement
-    feedback_file = os.path.join(LOCAL_MODEL_CACHE_PATH, "feedback.json")
+    feedback_file = os.path.join(MODEL_CACHE_DIR, "feedback.json")
     
     # Create or append to feedback file
     try:
