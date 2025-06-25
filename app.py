@@ -33,13 +33,7 @@ else:
 
 # New: Use versioned release for model loading
 TRAINED_MODEL_VERSION = _strip(os.getenv("TRAINED_MODEL_VERSION", "v0.1.0"))
-MODEL_SERVICE_IMAGE_TAG = _strip(os.getenv("MODEL_SERVICE_IMAGE_TAG"))
-if not MODEL_SERVICE_IMAGE_TAG:
-    try:
-        with open("VERSION") as f:
-            MODEL_SERVICE_IMAGE_TAG = f.read().strip()
-    except Exception:
-        MODEL_SERVICE_IMAGE_TAG = "unknown"
+MODEL_SERVICE_IMAGE_TAG = _strip(os.getenv("MODEL_SERVICE_IMAGE_TAG", "unknown"))
 MODEL_CACHE_DIR = _strip(os.getenv("MODEL_CACHE_DIR", "model_cache"))
 REPO = "remla25-team14/model-training"
 VECT_FILE_NAME = _strip(os.getenv("VECT_FILE_NAME", "c1_BoW_Sentiment_Model.pkl"))
