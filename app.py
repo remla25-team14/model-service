@@ -31,7 +31,7 @@ if token_file and os.path.exists(token_file):
 else:
     GITHUB_TOKEN = _strip(os.getenv("GITHUB_TOKEN"))
 
-# New: Use versioned release for model loading
+HOST = os.getenv("HOST", "0.0.0.0")
 TRAINED_MODEL_VERSION = _strip(os.getenv("TRAINED_MODEL_VERSION", "v0.1.0"))
 MODEL_SERVICE_IMAGE_TAG = _strip(os.getenv("MODEL_SERVICE_IMAGE_TAG"))
 if not MODEL_SERVICE_IMAGE_TAG:
@@ -291,5 +291,5 @@ def redirect_to_docs():
 
 # ─── Run ────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    logging.info(f"Serving on port {PORT}")
-    app.run(host="0.0.0.0", port=PORT)
+    logging.info(f"Serving on {HOST}:{PORT}")
+    app.run(host=HOST, port=PORT)
